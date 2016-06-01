@@ -37,7 +37,10 @@ def solve_binpacking(item_width,item_height,bin_width,bin_height,bin_cost=[],lef
 	bin_width:		list, widths of the bin types
 	bin_height:		list, heights of the bin types
 	bin_cost:		list, [], cost of each bin type
+	leftover_width_cost: 	list, [], the cost per unit width of the total width which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin width
+	leftover_height_cost: 	list, [], the cost per unit height of the total height which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin height
 	allow_rotation: list, [], True if the item is allowed to rotate 90deg, (unused for now)
+	timelimit:		number, 20, the maximum MILP computation time in seconds
 	
 	Returns:
 	bins:	list, a dictionary with properties and items for each used bin
@@ -72,13 +75,13 @@ def solve_binpacking(item_width,item_height,bin_width,bin_height,bin_cost=[],lef
 	
 	
 	if len(leftover_width_cost)==0:
-		cwl = [-0.5*ci for ci in c]
+		cwl = [-0.5*ci/Wi for ci,Wi in zip(c,W)]
 	else:
 		cwl = leftover_width_cost
 	
 	
 	if len(leftover_height_cost)==0:
-		chl = [-0.5*ci for ci in c]
+		chl = [-0.5*ci/Hi for ci,Hi in zip(c,H)]
 	else:
 		chl = leftover_height_cost
 	
@@ -351,7 +354,7 @@ def plot_binpacking(bins):
 		p.set_array( np.linspace(0,1,len(patches)) )
 		ax.add_collection(p)
 	
-	
+	plt.draw()
 	
 if __name__ == '__main__':
 	# items
