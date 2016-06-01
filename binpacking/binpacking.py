@@ -16,8 +16,14 @@
 #    You should have received a copy of the GNU General Public License
 #    along with binpacking.  If not, see <http://www.gnu.org/licenses/>.
 ######################################################################################
+"""
 
-import cplex
+References:
+	[1] D. Pisinger and M. Sigurd, “The two-dimensional bin packing problem with variable bin sizes and costs,” Discret. Optim., vol. 2, no. 2, pp. 154–167, Jun. 2005.
+"""	
+	
+from __future__ import division
+from pyomo.environ import *
 import numpy as np
 import itertools
 import matplotlib.pyplot as plt
@@ -25,43 +31,40 @@ import matplotlib.cm
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
-
-def solve_binpacking(item_width,item_height,bin_width,bin_height,bin_cost=[],leftover_width_cost=[],leftover_height_cost=[],allow_rotation=[],timelimit=20):
+	
+def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_height,bin_cost=[],bin_cost_leftover_width=[],bin_cost_leftover_height=[],solver='cplex',timelimit=20):
 	"""
-	Solves a bin packing problem with variable bins and variable cost as described in [1]
+	Solves a bin packing problem with variable bins and variable cost
 	An addition is made to specify if an item is allowed to rotate 90deg
 	
 	Parameters:
 	item_width:		list, widths of the items
 	item_height:	list, heights of the items
+	item_allow_rotation: list, True if the item is allowed to rotate 90deg
 	bin_width:		list, widths of the bin types
 	bin_height:		list, heights of the bin types
 	bin_cost:		list, [], cost of each bin type
-	leftover_width_cost: 	list, [], the cost per unit width of the total width which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin width
-	leftover_height_cost: 	list, [], the cost per unit height of the total height which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin height
-	allow_rotation: list, [], True if the item is allowed to rotate 90deg, (unused for now)
+	bin_cost_leftover_width: 	list, [], the cost per unit width of the total width which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin width
+	bin_cost_leftover_height: 	list, [], the cost per unit height of the total height which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin height
 	timelimit:		number, 20, the maximum MILP computation time in seconds
 	
 	Returns:
 	bins:	list, a dictionary with properties and items for each used bin
 
-	References:
-	[1] D. Pisinger and M. Sigurd, “The two-dimensional bin packing problem with variable bin sizes and costs,” Discret. Optim., vol. 2, no. 2, pp. 154–167, Jun. 2005.
 	"""
 	
-	############################################################################
 	# Input handling
-	############################################################################
-	# items
+	#items
 	w = item_width
 	h = item_height
 	n = len(w)
 	
-	if len(allow_rotation)==0:
+	if not len(item_allow_rotation)==len(w):
 		r = [0]*n
 	else:
-		r = [1 if a else 0 for a in allow_rotation]
+		r = [1 if a else 0 for a in item_allow_rotation]
 	
+		
 	
 	# bins
 	W = bin_width
@@ -74,235 +77,65 @@ def solve_binpacking(item_width,item_height,bin_width,bin_height,bin_cost=[],lef
 		c = bin_cost
 	
 	
-	if len(leftover_width_cost)==0:
-		cwl = [-0.5*ci/Wi for ci,Wi in zip(c,W)]
+	if not len(bin_cost_leftover_width)==len(W):
+		clw = [-0.5*ci/Wi for ci,Wi in zip(c,W)]
 	else:
-		cwl = leftover_width_cost
+		clw = bin_cost_leftover_width
 	
 	
-	if len(leftover_height_cost)==0:
-		chl = [-0.5*ci/Hi for ci,Hi in zip(c,H)]
+	if not len(bin_cost_leftover_height)==len(W):
+		clh = [-0.5*ci/Hi for ci,Hi in zip(c,H)]
 	else:
-		chl = leftover_height_cost
+		clh = bin_cost_leftover_height
 	
-		
-		
+	
 	# convert bins to binary format, each bin can only be used once
 	I = range(m)*n
 	W = W*n
 	H = H*n
 	c = c*n
-	cwl = cwl*n
-	chl = chl*n
-	
-	# define the milp
-	milp = cplex.Cplex()
-	
-	############################################################################
-	# Variables
-	############################################################################
-	# l[i,j] is 1 if item i is located left of item j
-	milp.variables.add(names=['l[{},{}]'.format(i,j) for i in range(n) for j in range(n)],
-					   lb=[0 for i in range(n) for j in range(n)],
-					   ub=[1 for i in range(n) for j in range(n)],
-					   types = ['B' for i in range(n) for j in range(n)]) 
+	clw = clw*n
+	clh = clh*n
 
-	# b[i,j] is 1 if item i is located below of j
-	milp.variables.add(names=['b[{},{}]'.format(i,j) for i in range(n) for j in range(n)],
-					   lb=[0 for i in range(n) for j in range(n)],
-					   ub=[1 for i in range(n) for j in range(n)],
-					   types = ['B' for i in range(n) for j in range(n)])
-					   
-	# f[i,k] is 1 if item i is located in bin k
-	milp.variables.add(names=['f[{},{}]'.format(i,j) for i in range(n) for j in range(n*m)],
-					   lb=[0 for i in range(n) for j in range(n*m)],
-					   ub=[1 for i in range(n) for j in range(n*m)],
-					   types = ['B' for i in range(n) for j in range(n*m)])
-					   
-	# z[k] is 1 if bin k is used
-	milp.variables.add(names=['z[{}]'.format(j) for j in range(n*m)],
-					   lb=[0 for j in range(n*m)],
-					   ub=[1 for j in range(n*m)],
-					   types = ['B' for j in range(n*m)])				   
-
-	# x[i] is x-coordinate of item i				   
-	milp.variables.add(names=['x[{}]'.format(i) for i in range(n)],
-					   lb=[0 for i in range(n)],
-					   types = ['C' for i in range(n)])				   
-					   
-	# y[i] is y-coordinate of item i				   
-	milp.variables.add(names=['y[{}]'.format(i) for i in range(n)],
-					   lb=[0 for i in range(n)],
-					   types = ['C' for i in range(n)])
 	
-	# r[i] is 1 if item i is rotated 90deg
-	milp.variables.add(names=['r[{}]'.format(i) for i in range(n)],
-					   lb=[0 for i in range(n)],
-					   ub=[r[i] for i in range(n)],
-					   types = ['B' for i in range(n)])
+	# Create Data dictionary
+	data={None:{
+		'i':{None: tuple(range(len(w)))},
+		'k':{None: tuple(range(len(W)))},
+		'w':{(i,): val for i,val in enumerate(w)},
+		'h':{(i,): val for i,val in enumerate(h)},
+		'ar':{(i,): val for i,val in enumerate(r)},
+		'W':{(i,): val for i,val in enumerate(W)},
+		'H':{(i,): val for i,val in enumerate(H)},
+		'maxW':{None: max(W)},
+		'maxH':{None: max(H)},
+		'c':{(i,): val for i,val in enumerate(c)},
+		'clw':{(i,): val for i,val in enumerate(clw)},
+		'clh':{(i,): val for i,val in enumerate(clh)},
+	}}
 	
 	
-	# # leftovers
-	# # xl[k] is x-coordinate of the leftover in bin k				   
-	# milp.variables.add(names=['xl[{}]'.format(k) for k in range(n*m)],
-					   # lb=[0 for i in range(n*m)],
-					   # ub=[W[k] for k in range(n*m)],
-					   # types = ['C' for i in range(n*m)])
-					   
-	# # yl[k] is y-coordinate of the leftover in bin k				   
-	# milp.variables.add(names=['yl[{}]'.format(k) for k in range(n*m)],
-					   # lb=[0 for k in range(n*m)],
-					   # ub=[H[k] for k in range(n*m)],
-					   # types = ['C' for k in range(n*m)])
-					   
-	# # wl[k] is width of the leftover in bin k				   
-	milp.variables.add(names=['lw[{}]'.format(k) for k in range(n*m)],
-					   lb=[0 for i in range(n*m)],
-					   ub=[W[k] for k in range(n*m)],
-					   types = ['C' for i in range(n*m)])
-					   
-	# # hl[k] is height of the leftover in bin k				   
-	milp.variables.add(names=['lh[{}]'.format(k) for k in range(n*m)],
-					   lb=[0 for i in range(n*m)],
-					   ub=[H[k] for k in range(n*m)],
-					   types = ['C' for i in range(n*m)])
+	# Create a problem instance and solve
+	instance = model.create_instance(data)
+	
+	# Solve
+	optimizer = SolverFactory(solver)
+	if solver == 'cplex':
+		options = {'timelimit': timelimit}
+	elif solver == 'glpk':
+		options = {}
 		
-	# ll[i,k] is 1 if item i is located left of leftover k
-	# milp.variables.add(names=['ll[{},{}]'.format(i,k) for i in range(n) for k in range(m*n)],
-					   # lb=[0 for i in range(n) for k in range(m*n)],
-					   # ub=[1 for i in range(n) for k in range(m*n)],
-					   # types = ['B' for i in range(n) for k in range(m*n)]) 
+	results = optimizer.solve(instance, options=options)
 
-	# # lb[i,k] is 1 if item i is located below of leftover k
-	# milp.variables.add(names=['lb[{},{}]'.format(i,k) for i in range(n) for k in range(m*n)],
-					   # lb=[0 for i in range(n) for k in range(m*n)],
-					   # ub=[1 for i in range(n) for k in range(m*n)],
-					   # types = ['B' for i in range(n) for k in range(m*n)])
-		
-	
-	############################################################################				   
-	# Constraints	   
-	############################################################################
-	# no overlap
-	for k in range(n*m):
-		for j in range(n):
-			for i in range(j):
-				milp.linear_constraints.add(lin_expr = [[[ 'l[{},{}]'.format(i,j) , 'l[{},{}]'.format(j,i) , 'b[{},{}]'.format(i,j) , 'b[{},{}]'.format(j,i) , 'f[{},{}]'.format(i,k) , 'f[{},{}]'.format(j,k) ],
-														 [  1                     ,  1                     ,  1                     ,  1                     , -1                     , -1                     ]]],
-														 senses = 'G',
-														 rhs = [-1],
-														 names = ['overlap[{},{},{}]'.format(i,j,k)])
-	
-	# overlap width
-	for j in range(n):
-		for i in range(n):
-			if not i==j:
-				milp.linear_constraints.add(lin_expr = [[[ 'x[{}]'.format(i) , 'x[{}]'.format(j) , 'l[{},{}]'.format(i,j) , 'r[{}]'.format(i)],
-														 [  1                , -1                ,  max(W)                , -max(W)          ]]],
-														 senses = 'L',
-														 rhs = [max(W)-w[i]],
-														 names = ['overlap width[{},{}]'.format(i,j)])
-				
-				milp.linear_constraints.add(lin_expr = [[[ 'x[{}]'.format(i) , 'x[{}]'.format(j) , 'l[{},{}]'.format(i,j) , 'r[{}]'.format(i)],
-														 [  1                , -1                ,  max(W)                ,  max(W)          ]]],
-														 senses = 'L',
-														 rhs = [2*max(W)-h[i]],
-														 names = ['overlap width rotated[{},{}]'.format(i,j)])
-				
-	# overlap height
-	for j in range(n):
-		for i in range(n):
-			if not i==j:
-				milp.linear_constraints.add(lin_expr = [[[ 'y[{}]'.format(i) , 'y[{}]'.format(j) , 'b[{},{}]'.format(i,j) , 'r[{}]'.format(i)],
-														 [  1                , -1                ,  max(H)                , -max(H)          ]]],
-														 senses = 'L',
-														 rhs = [max(H)-h[i]],
-														 names = ['overlap height[{},{}]'.format(i,j)])
-														 
-				milp.linear_constraints.add(lin_expr = [[[ 'y[{}]'.format(i) , 'y[{}]'.format(j) , 'b[{},{}]'.format(i,j) , 'r[{}]'.format(i)],
-														 [  1                , -1                ,  max(H)                ,  max(H)          ]]],
-														 senses = 'L',
-														 rhs = [2*max(H)-w[i]],
-														 names = ['overlap height rotated[{},{}]'.format(i,j)])
-														 
-	# bin width
-	for k in range(n*m):
-		for i in range(n):	
-			milp.linear_constraints.add(lin_expr = [[[ 'x[{}]'.format(i) , 'f[{},{}]'.format(i,k) , 'r[{}]'.format(i) , 'lw[{}]'.format(k) ],
-													 [  1                ,  max(W)                , -max(W)           ,  1                ]]],
-													 senses = 'L',
-													 rhs = [W[k]-w[i]+max(W)],
-													 names = ['bin width[{},{}]'.format(i,k)])
-													 
-			milp.linear_constraints.add(lin_expr = [[[ 'x[{}]'.format(i) , 'f[{},{}]'.format(i,k) , 'r[{}]'.format(i) , 'lw[{}]'.format(k) ],
-													 [  1                ,  max(W)                ,  max(W)           ,  1                ]]],
-													 senses = 'L',
-													 rhs = [2*W[k]-h[i]+max(W)],
-													 names = ['bin width rotated[{},{}]'.format(i,k)])
+	print( results )
+	# Retrieve the results
+	f = [[instance.f[i,k].value for i in instance.i] for k in instance.k]
 
-	# bin height
-	for k in range(n*m):
-		for i in range(n):	
-			milp.linear_constraints.add(lin_expr = [[[ 'y[{}]'.format(i) , 'f[{},{}]'.format(i,k) , 'r[{}]'.format(i) , 'lh[{}]'.format(k) ],
-													 [  1                ,  max(H)                , -max(H)           ,  1                ]]],
-													 senses = 'L',
-													 rhs = [H[k]-h[i]+max(H)],
-													 names = ['bin height[{},{}]'.format(i,k)])
-													 
-			milp.linear_constraints.add(lin_expr = [[[ 'y[{}]'.format(i) , 'f[{},{}]'.format(i,k) , 'r[{}]'.format(i) , 'lh[{}]'.format(k) ],
-													 [  1                ,  max(H)                ,  max(H)           ,  1                ]]],
-													 senses = 'L',
-													 rhs = [2*H[k]-w[i]+max(H)],
-													 names = ['bin height rotated[{},{}]'.format(i,k)])
-													 
-	# every item in a bin
-	for i in range(n):													
-		milp.linear_constraints.add(lin_expr = [[[ 'f[{},{}]'.format(i,k) for k in range(n*m)],
-												 [  1                     for k in range(n*m)]]],
-												 senses = 'G',
-												 rhs = [1],
-												 names = ['item in a bin[{}]'.format(i)])
-			
-	# an item can not be in a bin which is not used
-	for k in range(n*m):
-		for i in range(n):		
-			milp.linear_constraints.add(lin_expr = [[[ 'f[{},{}]'.format(i,k) , 'z[{}]'.format(k) ],
-													 [  1                     , -1                   ]]],
-													 senses = 'L',
-													 rhs = [0],
-													 names = ['unused bin[{},{}]'.format(i,k)])
-	
-	############################################################################		
-	# Objective
-	############################################################################
-	
-	milp.objective.set_linear( [('z[{}]'.format(k) ,c[k])   for k in range(n*m)]
-							  +[('lw[{}]'.format(k),cwl[k])  for k in range(n*m)]
-							  +[('lh[{}]'.format(k),chl[k])  for k in range(n*m)])
-		
-		
-		
-		
-		
-	# set solver parameters
-	milp.parameters.timelimit.set(timelimit)
-	milp.parameters.mip.tolerances.mipgap.set(0.001)
+	z = [instance.z[k].value for k in instance.k]
 
-
-	# solve	
-	milp.solve()
-
-
-	############################################################################		
-	# get the solution
-	############################################################################
-	f = [milp.solution.get_values(['f[{},{}]'.format(i,k) for i in range(n)]) for k in range(n*m)]
-
-	z = milp.solution.get_values(['z[{}]'.format(k) for k in range(n*m)])
-
-	x = milp.solution.get_values(['x[{}]'.format(i) for i in range(n)])
-	y = milp.solution.get_values(['y[{}]'.format(i) for i in range(n)])
-	r = milp.solution.get_values(['r[{}]'.format(i) for i in range(n)])
+	x = [instance.x[i].value for i in instance.i]
+	y = [instance.y[i].value for i in instance.i]
+	r = [instance.r[i].value for i in instance.i]
 	
 	# parse the solution to a readable format
 	bins = []
@@ -325,9 +158,7 @@ def solve_binpacking(item_width,item_height,bin_width,bin_height,bin_cost=[],lef
 			
 			bins.append(bin)
 	
-	
 	return (bins,cost)
-
 	
 	
 def plot_binpacking(bins):
@@ -337,17 +168,24 @@ def plot_binpacking(bins):
 	Parameters:
 	bins:	list, a dictionary with properties and items for each used bin
 	"""
-	for bin in bins:
-		fig,ax = plt.subplots()
-		plt.title('bin type {} - cost: {}'.format(bin['index'],bin['cost']))
-		plt.plot([0,0,bin['width'],bin['width'],0],[0,bin['height'],bin['height'],0,0],'k-')
-		plt.axis('equal')
+	
+	
+	nCols = int( len(bins)/np.floor(len(bins)**0.5) )
+	nRows = int( len(bins)/nCols )
+	
+	fig, axs = plt.subplots(nRows,nCols)
+
+	for bin,ax in zip(bins,axs):
+		
+		ax.plot([0,0,bin['width'],bin['width'],0],[0,bin['height'],bin['height'],0,0],'k-')
+		ax.set_title('bin type {} - cost: {}'.format(bin['index'],bin['cost']))
+		ax.set_aspect('equal', adjustable='box')
 		
 		patches = []
 		for item in bin['items']:
 			
 			patches.append(Polygon([[item['x'],item['y']],[item['x']+item['width'],item['y']],[item['x']+item['width'],item['y']+item['height']],[item['x'],item['y']+item['height']]],closed=True))
-			plt.text(item['x']+0.5*item['width'],item['y']+0.5*item['height'],'{}\n({}x{})'.format(item['index'],item['width'],item['height']),horizontalalignment='center',verticalalignment='center')
+			ax.text(item['x']+0.5*item['width'],item['y']+0.5*item['height'],'{}\n({}x{})'.format(item['index'],item['width'],item['height']),horizontalalignment='center',verticalalignment='center')
 
 
 		p = PatchCollection(patches, cmap=matplotlib.cm.viridis,alpha=0.5)
@@ -356,19 +194,155 @@ def plot_binpacking(bins):
 	
 	plt.draw()
 	
+	
+	
+	
+	
+################################################################################
+# define the bin packing abstract model
+################################################################################
+model = AbstractModel()
+
+# define sets
+model.i = Set(doc='set of items')
+model.k = Set(doc='set of all bins, every bin type times the number of items')
+
+#model.ij =  Set(dimen=2, rule=lambda model: [(i,j) for i in model.i for j in model.i if j<i ])
+
+# define parameters
+model.w = Param(model.i, doc='item widths')
+model.h = Param(model.i, doc='item heights')
+model.ar = Param(model.i, doc='allow item rotation')
+
+model.W = Param(model.k, doc='bin widths')
+model.H = Param(model.k, doc='bin heights')
+
+model.maxW = Param(doc='maximum bin width')
+model.maxH = Param(doc='maximum bin height')
+
+model.c = Param(model.k, doc='bin costs')
+model.clw = Param(model.k, doc='bin width leftover costs')
+model.clh = Param(model.k, doc='bin height leftover costs')
+
+
+# define variables
+model.l = Var(model.i, model.i, domain=Boolean, doc='l[i,j] is 1 if item i is on the left of item j')
+model.b = Var(model.i, model.i, domain=Boolean, doc='b[i,j] is 1 if item i is below item j')
+
+model.f = Var(model.i, model.k, domain=Boolean, doc='f[i,k] is 1 if item i is in bin k')
+model.z = Var(model.k, domain=Boolean, doc='z[k] is 1 if bin k is used')
+
+model.x = Var(model.i, domain=NonNegativeReals, doc='x[i] is the x-coordinate of item i')
+model.y = Var(model.i, domain=NonNegativeReals, doc='y[i] is the y-coordinate of item i')
+
+model.r = Var(model.i, domain=Boolean, doc='r[i] is 1 item i is rotated 90deg')
+
+model.lw = Var(model.k, domain=NonNegativeReals, doc='lw[k] is the unused width in bin k')
+model.lh = Var(model.k, domain=NonNegativeReals, doc='lh[k] is the unused height in bin k')
+
+
+# define constraints
+model.ConstraintNoOverlap = Constraint(model.i,model.i,model.k,
+	rule=lambda model,i,j,k: model.l[i,j] + model.l[j,i] + model.b[i,j] + model.b[j,i] + (1 - model.f[i,k]) + (1 - model.f[j,k]) >= 1 if i < j else Constraint.Feasible
+)
+
+model.ConstraintOverlapWidth = Constraint(model.i,model.i,
+	rule=lambda model,i,j: model.x[i] + model.w[i] - model.x[j] - model.maxW*(1-model.l[i,j]) - model.maxW*model.r[i] <= 0
+)
+model.ConstraintOverlapWidthRotated = Constraint(model.i,model.i,
+	rule=lambda model,i,j: model.x[i] + model.h[i] - model.x[j] - model.maxW*(1-model.l[i,j]) - model.maxW*(1-model.r[i]) <= 0
+)
+
+
+model.ConstraintOverlapHeight = Constraint(model.i,model.i,
+	rule=lambda model,i,j: model.y[i] + model.h[i] - model.y[j] - model.maxH*(1-model.b[i,j]) - model.maxH*model.r[i] <= 0
+)
+model.ConstraintOverlapHeightRotated = Constraint(model.i,model.i,
+	rule=lambda model,i,j: model.y[i] + model.w[i] - model.y[j] - model.maxH*(1-model.b[i,j]) - model.maxH*(1-model.r[i]) <= 0
+)
+
+
+model.ConstraintBinWidth = Constraint(model.i,model.k,
+	rule=lambda model,i,k: model.x[i] + model.w[i] - model.maxW*(1-model.f[i,k]) - model.maxW*model.r[i] + model.lw[k] <= model.W[k]
+)
+model.ConstraintBinWidthRotated = Constraint(model.i,model.k,
+	rule=lambda model,i,k: model.x[i] + model.h[i] - model.maxW*(1-model.f[i,k]) - model.maxW*(1-model.r[i]) + model.lw[k] <= model.W[k]
+)
+
+
+model.ConstraintBinHeight = Constraint(model.i,model.k,
+	rule=lambda model,i,k: model.y[i] + model.h[i] - model.maxH*(1-model.f[i,k]) - model.maxH*model.r[i] + model.lh[k] <= model.H[k]
+)
+model.ConstraintBinHeightRotated = Constraint(model.i,model.k,
+	rule=lambda model,i,k: model.y[i] + model.w[i] - model.maxH*(1-model.f[i,k]) - model.maxH*(1-model.r[i]) + model.lh[k] <= model.H[k]
+)
+
+model.ConstraintEveryItem = Constraint(model.i,
+	rule=lambda model,i: sum(model.f[i,k] for k in model.k) >= 1
+)
+
+model.ConstraintUnusedBins = Constraint(model.i,model.k,
+	rule=lambda model,i,k: model.f[i,k] <= model.z[k]
+)
+
+model.ConstraintAllowRotation = Constraint(model.i,
+	rule=lambda model,i: model.r[i] <= model.ar[i]
+)
+	
+	
+# define the objective
+model.Objective = Objective(
+	rule=lambda model: sum(model.z[k]*model.c[k] + model.lw[k]*model.clw[k] + model.lh[k]*model.clh[k] for k in model.k) 
+)
+
+	
+	
+	
+	
 if __name__ == '__main__':
+	
 	# items
-	w = [10,20,20,20,20,40,40]
-	h = [20,10,20,20,20,20,20]
-	r = [True,False,False,False,False,False,False]
+	item_width = [10,20,20,20,20,40,40]
+	item_height = [20,10,20,20,20,20,20]
+	item_allow_rotation = [False]*len(item_width)
 	
 	# bin types
-	W = [30,40]
-	H = [30,40]
-	c = [9,16]
-	cl = [7,10]
-	(bins,cost) = solve_binpacking(w,h,W,H,c,cl,r)
+	bin_width = [30,40]
+	bin_height = [30,40]
+	bin_cost = [9,16]
+	bin_cost_leftover_width = [-0.01,-0.02]
+	bin_cost_leftover_height = [-0.01,-0.02]
+	
+	# solve
+	(bins,cost) = solve_binpacking(item_width,
+								   item_height,
+								   item_allow_rotation,
+								   bin_width,
+								   bin_height,
+								   bin_cost,
+								   bin_cost_leftover_width,
+								   bin_cost_leftover_height,
+								   solver='glpk')
+	# plot							   
 	plot_binpacking(bins)
 	
-	plt.axis('equal')
+	
+	# add freedom
+	item_allow_rotation[0] = [True]
+	
+	# solve
+	(bins,cost) = solve_binpacking(item_width,
+								   item_height,
+								   item_allow_rotation,
+								   bin_width,
+								   bin_height,
+								   bin_cost,
+								   bin_cost_leftover_width,
+								   bin_cost_leftover_height)
+	# plot							   
+	plot_binpacking(bins)
+	
+	
+	
+	
 	plt.show()
