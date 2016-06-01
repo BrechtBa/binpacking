@@ -50,6 +50,6 @@ setup(
 	author='Brecht Baeten',
 	author_email='brecht.baeten@gmail.com',
 	packages=['binpacking'],
-	install_requires=[],
+	install_requires=['pyomo','numpy','matplotlib'],
 	classifiers = ['Programming Language :: Python :: 2.7'],
 )
