@@ -32,7 +32,7 @@ from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
 	
-def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_height,bin_cost=[],bin_cost_leftover_width=[],bin_cost_leftover_height=[],solver='cplex',timelimit=20):
+def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_height,bin_cost=[],bin_cost_leftover_width=[],bin_cost_leftover_height=[],solver='cplex',options={}):
 	"""
 	Solves a bin packing problem with variable bins and variable cost
 	An addition is made to specify if an item is allowed to rotate 90deg
@@ -120,10 +120,6 @@ def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_he
 	
 	# Solve
 	optimizer = SolverFactory(solver)
-	if solver == 'cplex':
-		options = {'timelimit': timelimit}
-	elif solver == 'glpk':
-		options = {}
 		
 	results = optimizer.solve(instance, options=options)
 
@@ -174,7 +170,13 @@ def plot_binpacking(bins):
 	nRows = int( len(bins)/nCols )
 	
 	fig, axs = plt.subplots(nRows,nCols)
-
+	
+	# chech if axes is iterable
+	try:
+		some_object_iterator = iter(axs)
+	except TypeError, te:
+		axs = (axs,)
+	
 	for bin,ax in zip(bins,axs):
 		
 		ax.plot([0,0,bin['width'],bin['width'],0],[0,bin['height'],bin['height'],0,0],'k-')
@@ -239,6 +241,10 @@ model.r = Var(model.i, domain=Boolean, doc='r[i] is 1 item i is rotated 90deg')
 
 model.lw = Var(model.k, domain=NonNegativeReals, doc='lw[k] is the unused width in bin k')
 model.lh = Var(model.k, domain=NonNegativeReals, doc='lh[k] is the unused height in bin k')
+
+#model.maxlw = Var(domain=NonNegativeReals, doc='maxlw is the maximum of lw')
+#model.maxlh = Var(domain=NonNegativeReals, doc='maxlh is the maximum of lh')
+
 
 
 # define constraints
