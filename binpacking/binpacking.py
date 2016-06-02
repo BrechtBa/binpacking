@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env/ python
 ######################################################################################
-#    Copyright 2015 Brecht Baeten
+#    Copyright 2016 Brecht Baeten
 #    This file is part of binpacking.
 #
 #    binpacking is free software: you can redistribute it and/or modify

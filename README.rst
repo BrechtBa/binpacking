@@ -15,7 +15,7 @@ Setup
 ^^^^^
 * download the latest `release <https://github.com/BrechtBa/binpacking/releases/>`_
 * unzip and cd to the folder
-* run `python setup.py install`
+* run ``python setup.py install``
 
 Examples
 ========
