@@ -32,25 +32,29 @@ from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
 	
-def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_height,bin_cost=[],bin_cost_leftover_width=[],bin_cost_leftover_height=[],solver='cplex',options={}):
+def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_height,bin_cost=[],cost_maximum_leftover_width=None,cost_maximum_leftover_height=None,bin_cost_leftover_width=[],bin_cost_leftover_height=[],solver='cplex',options={}):
 	"""
 	Solves a bin packing problem with variable bins and variable cost
 	An addition is made to specify if an item is allowed to rotate 90deg
 	
 	Parameters:
-	item_width:		list, widths of the items
-	item_height:	list, heights of the items
-	item_allow_rotation: list, True if the item is allowed to rotate 90deg
-	bin_width:		list, widths of the bin types
-	bin_height:		list, heights of the bin types
-	bin_cost:		list, [], cost of each bin type
-	bin_cost_leftover_width: 	list, [], the cost per unit width of the total width which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin width
-	bin_cost_leftover_height: 	list, [], the cost per unit height of the total height which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin height
-	timelimit:		number, 20, the maximum MILP computation time in seconds
+		item_width:		list, widths of the items
+		item_height:	list, heights of the items
+		item_allow_rotation: list, True if the item is allowed to rotate 90deg
+		bin_width:		list, widths of the bin types
+		bin_height:		list, heights of the bin types
+		bin_cost:		list, [], cost of each bin type
+		cost_maximum_leftover_width: 	Number, cost of the maximum height leftover 
+		cost_maximum_leftover_width: 	Number, cost of the maximum height leftover  
+		bin_cost_leftover_width: 		list, [], the cost per unit width of the total width which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin width
+		bin_cost_leftover_height: 		list, [], the cost per unit height of the total height which is left over in each bin. Defaults to -0.5 times the total bin cost divided by the bin height
+		timelimit:		number, 20, the maximum MILP computation time in seconds
 	
 	Returns:
-	bins:	list, a dictionary with properties and items for each used bin
+		bins:	list, a dictionary with properties and items for each used bin
 
+	Example:
+	
 	"""
 	
 	# Input handling
@@ -77,14 +81,28 @@ def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_he
 		c = bin_cost
 	
 	
+	if cost_maximum_leftover_width == None and cost_maximum_leftover_height == None:
+		cmaxlw = 0
+		cmaxlh = -0.1*max(c)/max(H)
+	elif cost_maximum_leftover_width == None:
+		cmaxlw = 0
+		cmaxlh = cost_maximum_leftover_height
+	elif cost_maximum_leftover_height == None:
+		cmaxlw = cost_maximum_leftover_width
+		cmaxlh = 0
+	else:
+		cmaxlw = cost_maximum_leftover_width
+		cmaxlh = cost_maximum_leftover_height
+	
+	
 	if not len(bin_cost_leftover_width)==len(W):
-		clw = [-0.5*ci/Wi for ci,Wi in zip(c,W)]
+		clw = [0 for ci,Wi in zip(c,W)]
 	else:
 		clw = bin_cost_leftover_width
 	
 	
 	if not len(bin_cost_leftover_height)==len(W):
-		clh = [-0.5*ci/Hi for ci,Hi in zip(c,H)]
+		clh = [0 for ci,Hi in zip(c,H)]
 	else:
 		clh = bin_cost_leftover_height
 	
@@ -95,8 +113,8 @@ def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_he
 	H = H*n
 	c = c*n
 	clw = clw*n
-	clh = clh*n
-
+	clh = clh*n 
+	
 	
 	# Create Data dictionary
 	data={None:{
@@ -112,6 +130,8 @@ def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_he
 		'c':{(i,): val for i,val in enumerate(c)},
 		'clw':{(i,): val for i,val in enumerate(clw)},
 		'clh':{(i,): val for i,val in enumerate(clh)},
+		'cmaxlw':{None: cmaxlw},
+		'cmaxlh':{None: cmaxlh},
 	}}
 	
 	
@@ -132,6 +152,14 @@ def solve_binpacking(item_width,item_height,item_allow_rotation,bin_width,bin_he
 	x = [instance.x[i].value for i in instance.i]
 	y = [instance.y[i].value for i in instance.i]
 	r = [instance.r[i].value for i in instance.i]
+	
+	
+	lw = [instance.lw[k].value for k in instance.k]
+	lh = [instance.lh[k].value for k in instance.k]
+	
+	mlw = [instance.mlw[k].value for k in instance.k]
+	mlh = [instance.mlh[k].value for k in instance.k]	
+
 	
 	# parse the solution to a readable format
 	bins = []
@@ -225,6 +253,8 @@ model.maxH = Param(doc='maximum bin height')
 model.c = Param(model.k, doc='bin costs')
 model.clw = Param(model.k, doc='bin width leftover costs')
 model.clh = Param(model.k, doc='bin height leftover costs')
+model.cmaxlw = Param(doc='bin width leftover costs')
+model.cmaxlh = Param(doc='bin height leftover costs')
 
 
 # define variables
@@ -242,9 +272,11 @@ model.r = Var(model.i, domain=Boolean, doc='r[i] is 1 item i is rotated 90deg')
 model.lw = Var(model.k, domain=NonNegativeReals, doc='lw[k] is the unused width in bin k')
 model.lh = Var(model.k, domain=NonNegativeReals, doc='lh[k] is the unused height in bin k')
 
-#model.maxlw = Var(domain=NonNegativeReals, doc='maxlw is the maximum of lw')
-#model.maxlh = Var(domain=NonNegativeReals, doc='maxlh is the maximum of lh')
+model.mlw = Var(model.k, domain=Boolean, doc='mlw[k] is 1 if lwk == maxlw')
+model.mlh = Var(model.k, domain=Boolean, doc='mlw[k] is 1 if lwk == maxlw')
 
+model.maxlw = Var(domain=NonNegativeReals, doc='maxlw is the maximum of lw')
+model.maxlh = Var(domain=NonNegativeReals, doc='maxlh is the maximum of lh')
 
 
 # define constraints
@@ -294,11 +326,33 @@ model.ConstraintUnusedBins = Constraint(model.i,model.k,
 model.ConstraintAllowRotation = Constraint(model.i,
 	rule=lambda model,i: model.r[i] <= model.ar[i]
 )
+
 	
-	
+model.ConstraintMaximumWidth = Constraint(model.k,
+	rule=lambda model,k: model.maxlw <= model.lw[k] + (1-model.mlw[k])*model.maxW
+)
+model.ConstraintMaximumHeigth = Constraint(model.k,
+	rule=lambda model,k: model.maxlh <= model.lh[k] + (1-model.mlh[k])*model.maxH
+)
+
+model.ConstraintOneMaximumWidth = Constraint(
+	rule=lambda model: sum(model.mlw[k] for k in model.k) == 1
+)
+model.ConstraintOneMaximumHeight = Constraint(
+	rule=lambda model: sum(model.mlh[k] for k in model.k) == 1
+)
+
+model.ConstraintMaximumWidthIsUsedBin = Constraint(model.k,
+	rule=lambda model,k: model.mlw[k] <= model.z[k]
+)
+model.ConstraintMaximumHeightIsUsedBin = Constraint(model.k,
+	rule=lambda model,k: model.mlh[k] <= model.z[k]
+)
+
+
 # define the objective
 model.Objective = Objective(
-	rule=lambda model: sum(model.z[k]*model.c[k] + model.lw[k]*model.clw[k] + model.lh[k]*model.clh[k] for k in model.k) 
+	rule=lambda model: sum(model.z[k]*model.c[k] + model.lw[k]*model.clw[k] + model.lh[k]*model.clh[k] for k in model.k) + model.maxlw*model.cmaxlw  + model.maxlh*model.cmaxlh
 )
 
 	
@@ -306,7 +360,8 @@ model.Objective = Objective(
 	
 	
 if __name__ == '__main__':
-	
+
+	# Basic example
 	# items
 	item_width = [10,20,20,20,20,40,40]
 	item_height = [20,10,20,20,20,20,20]
@@ -316,8 +371,6 @@ if __name__ == '__main__':
 	bin_width = [30,40]
 	bin_height = [30,40]
 	bin_cost = [9,16]
-	bin_cost_leftover_width = [-0.01,-0.02]
-	bin_cost_leftover_height = [-0.01,-0.02]
 	
 	# solve
 	(bins,cost) = solve_binpacking(item_width,
@@ -325,30 +378,8 @@ if __name__ == '__main__':
 								   item_allow_rotation,
 								   bin_width,
 								   bin_height,
-								   bin_cost,
-								   bin_cost_leftover_width,
-								   bin_cost_leftover_height,
-								   solver='glpk')
+								   bin_cost)
 	# plot							   
 	plot_binpacking(bins)
-	
-	
-	# add freedom
-	item_allow_rotation[0] = [True]
-	
-	# solve
-	(bins,cost) = solve_binpacking(item_width,
-								   item_height,
-								   item_allow_rotation,
-								   bin_width,
-								   bin_height,
-								   bin_cost,
-								   bin_cost_leftover_width,
-								   bin_cost_leftover_height)
-	# plot							   
-	plot_binpacking(bins)
-	
-	
-	
 	
 	plt.show()
