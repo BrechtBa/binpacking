@@ -3,7 +3,22 @@ from setuptools import setup
 import os
 import subprocess
 
+# edit setup details here
+name='binpacking'
+license='GNU GPLv3'
+description='2D binpacking solver'
+url=''
+author='Brecht Baeten'
+author_email='brecht.baeten@gmail.com'
+packages=['binpacking']
+install_requires=['pyomo','numpy','matplotlib']
+classifiers = ['Programming Language :: Python :: 2.7']
 
+
+################################################################################
+# do not edit
+################################################################################
+# Get the git version
 try:
 	# get the current git branch
 	branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD' ])[:-1]
@@ -27,6 +42,13 @@ try:
 		version_minor = int(splittag[1])
 		version_patch = int(splittag[2])
 		version = tag
+		
+		# write the version to version.py
+		for dir in packages:
+			f = open( '{}//version.py'.format(dir), 'w')
+			f.write( '__version__ = \'{}\''.format(version) )
+			f.close()
+			
 	except:
 		version_major = -1
 		version_minor = -1
@@ -39,17 +61,19 @@ except:
 	print('Warning: probably no git version control')
 	version = ''
 	
+
 	
+# run the setup command
 setup(
-    name='binpacking',
+    name=name,
     version=version,
-    license='GNU GPLv3',
-	description='2D binpacking solver',
+    license=license,
+	description=description,
 	long_description=open(os.path.join(os.path.dirname(__file__), 'README.rst')).read(),
-	url='',
-	author='Brecht Baeten',
-	author_email='brecht.baeten@gmail.com',
-	packages=['binpacking'],
-	install_requires=['pyomo','numpy','matplotlib'],
-	classifiers = ['Programming Language :: Python :: 2.7'],
+	url=url,
+	author=author,
+	author_email=author_email,
+	packages=packages,
+	install_requires=install_requires,
+	classifiers=classifiers,
 )
