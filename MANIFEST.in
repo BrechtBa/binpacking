@@ -1,3 +1,5 @@
 include README.md
 include LICENSE
 include examples/example.py
+include examples/example_glpk.py
+include examples/example_rotation.py

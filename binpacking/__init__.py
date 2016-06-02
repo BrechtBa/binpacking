@@ -1,2 +1,2 @@
 from binpacking import *
-from version import *
+import __version__
